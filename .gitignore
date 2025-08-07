@@ -1,0 +1,133 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Ambientes Virtuais
+env/
+.venv/
+venv/
+venv_*/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+__pypackages__/
+
+# Distribuição / Empacotamento
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Instaladores
+pip-log.txt
+pip-delete-this-directory.txt
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Poetry
+poetry.toml
+
+# PDM
+.pdm.toml
+
+# Testes e Cobertura
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+.ruff_cache/
+
+# Documentação
+docs/_build/
+/site
+
+# Jupyter Notebook / IPython
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath
+*.sage.py
+
+# Type Checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+pyrightconfig.json
+
+# Debug
+cython_debug/
+
+# IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+.project
+.metadata
+.classpath
+.settings/
+.vscode/
+*.code-workspace
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Rope
+.ropeproject
+
+# Logs e Dados Temporários
+*.log
+*.temp
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Arquivos de Sistema/OS
+.DS_Store
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Arquivos de Configuração Sensíveis
+.env
+*.json.secret
+*.ini.secret
