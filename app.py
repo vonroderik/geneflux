@@ -3,7 +3,11 @@ from Bio.Blast import NCBIWWW, NCBIXML
 from Bio.Seq import Seq
 from Bio.SeqUtils import seq3
 import re
+import random
 from typing import List, Tuple, Literal
+from collections import Counter
+from itertools import product
+from io import StringIO
 
 # --- Funções de Análise do DNA, adaptadas para Streamlit ---
 
@@ -36,6 +40,15 @@ def validate_sequence(seq: str) -> Tuple[str, Literal["dna", "rna"]]:
 
     return validated_seq, "dna" if "U" not in validated_seq else "rna"
 
+def validate_genotype(genotype: str):
+    """Verifica se o genótipo entrado pelo usuário é válido."""
+    valid_genotypes = {"AA", "Aa", "aA", "aa"}
+    genotype_normalized = genotype.strip()
+    if not genotype_normalized:
+        raise ValueError("Entrada vazia. Por favor, digite um genótipo válido.")
+    if genotype_normalized not in valid_genotypes:
+        raise ValueError(f"'{genotype}' não é um genótipo válido.")
+
 def reverse_transcription(seq: str) -> str:
     """Converte uma sequência de RNA para DNA."""
     return seq if "U" not in seq else seq.replace("U", "T")
@@ -56,7 +69,8 @@ def translation(seq: str) -> List[str]:
         st.error("Sua sequência deve ter pelo menos 3 códons para ser traduzida.")
         return []
     
-    protein = str(Seq(rna_seq).translate(to_stop=False))
+    trimmed_seq = rna_seq[: len(rna_seq) - len(rna_seq) % 3]
+    protein = str(Seq(trimmed_seq).translate(to_stop=False))
     return [seq3(aa).title() for aa in protein]
 
 def orf_finder(seq: str) -> List[str] | None:
@@ -106,7 +120,6 @@ def gene_identifier(seq: str):
                 database="nt",
                 sequence=dna_seq,
             )
-            # time.sleep(2) # Simula um delay para a resposta
         
         blast_record = NCBIXML.read(result_handle)
 
@@ -122,6 +135,87 @@ def gene_identifier(seq: str):
     finally:
         if result_handle is not None:
             result_handle.close()
+
+# --- Funções do Módulo Educativo, adaptadas para Streamlit ---
+
+def generate_sequence() -> str:
+    """Retorna uma sequência de DNA aleatória com 15 bases."""
+    return "".join(random.choices(["C", "G", "T", "A"], k=15))
+
+def punnet_square_display(genotype1: str, genotype2: str):
+    """Cria e exibe um quadro de Punnett de forma mais visualmente agradável."""
+    try:
+        validate_genotype(genotype1)
+        validate_genotype(genotype2)
+    except ValueError as e:
+        st.error(f"Erro: {e}")
+        return
+
+    gamete1 = list(genotype1)
+    gamete2 = list(genotype2)
+    offspring = [a + b for a, b in product(gamete1, gamete2)]
+    norm_offspring = ["".join(sorted(children)) for children in offspring]
+    count = Counter(norm_offspring)
+
+    st.subheader("Quadro de Punnett")
+    st.markdown("---")
+
+    table_html = "<table style='width:100%; border-collapse: collapse;'>"
+    
+    # Cabeçalho da tabela
+    table_html += "<tr>"
+    table_html += f"<th style='border: 1px solid black; padding: 8px;'>♂ / ♀</th>"
+    for g in gamete2:
+        table_html += f"<th style='border: 1px solid black; padding: 8px;'><b>{g}</b></th>"
+    table_html += "</tr>"
+
+    # Corpo da tabela
+    for g1 in gamete1:
+        table_html += "<tr>"
+        table_html += f"<td style='border: 1px solid black; padding: 8px;'><b>{g1}</b></td>"
+        for g2 in gamete2:
+            child = "".join(sorted(g1 + g2))
+            color = "green" if child != "aa" else "red"
+            table_html += f"<td style='border: 1px solid black; padding: 8px;'><span style='color:{color}; font-weight:bold;'>{child}</span></td>"
+        table_html += "</tr>"
+    
+    table_html += "</table>"
+    st.markdown(table_html, unsafe_allow_html=True)
+
+    st.markdown("### Frequência Genotípica")
+    for genotype, freq in count.items():
+        perc = 100 * freq / 4
+        st.write(f"- **{genotype}**: {freq}/{4} ({perc:.1f}%)")
+
+    st.markdown("### Frequência Fenotípica (autossômica recessiva)")
+    dominant = sum(freq for gen, freq in count.items() if "A" in gen and gen != "aa")
+    recessive = count.get("aa", 0)
+    perc_dom = 100 * dominant / 4
+    perc_rec = 100 * recessive / 4
+    st.write(f"- **Dominante (AA/Aa)**: {dominant}/{4} ({perc_dom:.1f}%)")
+    st.write(f"- **Recessivo (aa)**: {recessive}/{4} ({perc_rec:.1f}%)")
+
+
+def get_colored_feedback(correct_seq: str, user_seq: str) -> str:
+    """
+    Compara duas sequências e retorna uma string formatada com cores para destacar erros.
+    - Verde para bases corretas.
+    - Vermelho para bases incorretas.
+    """
+    feedback_str = ""
+    min_len = min(len(correct_seq), len(user_seq))
+    
+    for i in range(min_len):
+        if correct_seq[i] == user_seq[i]:
+            feedback_str += f"<span style='color:green; font-weight:bold;'>{user_seq[i]}</span>"
+        else:
+            feedback_str += f"<span style='color:red; font-weight:bold;'>{user_seq[i]}</span>"
+            
+    # Adiciona o restante da sequência do usuário caso seja maior
+    if len(user_seq) > min_len:
+        feedback_str += f"<span style='color:red; font-weight:bold;'>{user_seq[min_len:]}</span>"
+    
+    return feedback_str
 
 # --- Funções de Exibição Formatada ---
 
@@ -146,9 +240,20 @@ def display_complementary(dna_seq: str, comp_dna_seq: str, line_size: int = LINE
 def display_amino_acids(protein_list: List[str], line_size: int = LINE_SIZE):
     """Exibe a sequência de aminoácidos."""
     st.subheader("SEQUÊNCIA DE AMINOÁCIDOS")
+    output = StringIO()
     for i in range(0, len(protein_list), line_size):
         aa_fragment = " - ".join(protein_list[i : i + line_size])
-        st.code(f"{i:04} - {aa_fragment}")
+        output.write(f"{i:04} - {aa_fragment}\n")
+    st.code(output.getvalue())
+
+def display_orfs(orfs: list | None):
+    """Exibe as ORFs identificadas."""
+    if not orfs:
+        st.warning("Nenhuma ORF encontrada.")
+        return
+    st.subheader("Open Reading Frames (ORFs) Encontradas")
+    for idx, orf in enumerate(orfs, 1):
+        st.code(f"ORF - {idx:02}: {orf}")
 
 # --- Estrutura da Aplicação Streamlit ---
 
@@ -158,112 +263,251 @@ st.set_page_config(
     layout="wide"
 )
 
-# Inicializa st.session_state
-if "seq" not in st.session_state:
-    st.session_state.seq = None
-if "mol_type" not in st.session_state:
-    st.session_state.mol_type = None
-
 # Título do aplicativo
 st.title("GeneFlux")
 st.markdown("""
-
     #### DNA → RNA → ORFs → Proteína
-    ###### by RMello
+    ###### por RMello
 """)
 st.markdown("---")
 
-# Seção de entrada de dados
-st.subheader("Entrada de Sequência")
-user_sequence = st.text_area(
-    "Digite sua sequência de DNA ou RNA aqui:",
-    height=150,
-    placeholder="Ex: ATGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCT"
-).strip().upper().replace(" ", "")
+# Menu de seleção para o módulo
+module_choice = st.sidebar.radio(
+    "Escolha um módulo:",
+    ("Módulo de Análises", "Módulo Educativo")
+)
 
-# Adição de um botão para processar a sequência
-if st.button("Processar Sequência"):
-    if user_sequence:
-        try:
-            seq, mol_type = validate_sequence(user_sequence)
-            st.session_state.seq = seq
-            st.session_state.mol_type = mol_type
-            st.rerun()  # Força a página a recarregar para exibir os resultados
-        except ValueError as e:
-            st.error(f"Erro: {e}")
-    else:
-        st.info("Por favor, digite uma sequência antes de processar.")
+if module_choice == "Módulo de Análises":
+    st.subheader("Módulo de Análises")
 
-# Bloco de análise que só é exibido se houver uma sequência válida na sessão
-if st.session_state.seq and st.session_state.mol_type:
-    st.success(f"Sequência de **{st.session_state.mol_type.upper()}** detectada!")
-    st.markdown("---")
+    # Inicializa st.session_state
+    if "seq" not in st.session_state:
+        st.session_state.seq = None
+    if "mol_type" not in st.session_state:
+        st.session_state.mol_type = None
 
-    # Menu lateral para as ferramentas
-    st.sidebar.title("Opções de Análise")
-    option = st.sidebar.radio(
-        "Escolha uma operação para realizar:",
-        ("DNA Complementar", "Transcrever para RNA", "Traduzir para Aminoácidos", "ORF Finder", "Identificador de Gene")
-    )
+    # Seção de entrada de dados
+    user_sequence = st.text_area(
+        "Digite sua sequência de DNA ou RNA aqui:",
+        height=150,
+        placeholder="Ex: ATGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCT"
+    ).strip().upper().replace(" ", "")
 
-    # Exibição de resultados com base na opção do menu
-    st.subheader(f"Resultado da Análise: {option}")
+    # Adição de um botão para processar a sequência
+    if st.button("Processar Sequência"):
+        if user_sequence:
+            try:
+                seq, mol_type = validate_sequence(user_sequence)
+                st.session_state.seq = seq
+                st.session_state.mol_type = mol_type
+                st.rerun()  # Força a página a recarregar para exibir os resultados
+            except ValueError as e:
+                st.error(f"Erro: {e}")
+        else:
+            st.info("Por favor, digite uma sequência antes de processar.")
 
-    if option == "DNA Complementar":
-        comp_dna = complementary_dna(st.session_state.seq)
-        display_complementary(st.session_state.seq, comp_dna)
-        
-    elif option == "Transcrever para RNA":
-        rna_seq = transcription(st.session_state.seq)
-        display_formatted_sequence("Sequência de RNA", rna_seq)
+    # Bloco de análise que só é exibido se houver uma sequência válida na sessão
+    if st.session_state.seq and st.session_state.mol_type:
+        st.success(f"Sequência de **{st.session_state.mol_type.upper()}** detectada!")
+        st.markdown("---")
 
-    elif option == "Traduzir para Aminoácidos":
-        st.write("---")
-        rna_seq = transcription(st.session_state.seq)
-        orfs = orf_finder(st.session_state.seq)
+        # Menu lateral para as ferramentas
+        st.sidebar.markdown("### Ferramentas de Análise")
+        option = st.sidebar.radio(
+            "Escolha uma operação para realizar:",
+            ("DNA Complementar", "Transcrever para RNA", "Traduzir para Aminoácidos", "Localizador de ORF", "Identificador de Gene")
+        )
 
-        # Se houver ORFs, dá a opção de escolher qual traduzir
-        if orfs:
-            orf_options = [f"ORF {i+1} (Início: {rna_seq.find(orf)} -> Fim: {rna_seq.find(orf) + len(orf)})" for i, orf in enumerate(orfs)]
-            orf_options.insert(0, "Traduzir a sequência completa")
+        # Exibição de resultados com base na opção do menu
+        st.subheader(f"Resultado da Análise: {option}")
+
+        if option == "DNA Complementar":
+            comp_dna = complementary_dna(st.session_state.seq)
+            display_complementary(st.session_state.seq, comp_dna)
             
-            selected_option = st.selectbox(
-                "Escolha a sequência para tradução:",
-                options=orf_options,
-                index=0
-            )
+        elif option == "Transcrever para RNA":
+            rna_seq = transcription(st.session_state.seq)
+            display_formatted_sequence("Sequência de RNA", rna_seq)
 
-            if selected_option == "Traduzir a sequência completa":
-                seq_to_translate = rna_seq
+        elif option == "Traduzir para Aminoácidos":
+            rna_seq = transcription(st.session_state.seq)
+            orfs = orf_finder(st.session_state.seq)
+
+            # Se houver ORFs, dá a opção de escolher qual traduzir
+            if orfs:
+                orf_options = [f"ORF {i+1}" for i in range(len(orfs))]
+                orf_options.insert(0, "Sequência Completa")
+                
+                selected_option = st.selectbox(
+                    "Escolha a sequência para tradução:",
+                    options=orf_options,
+                    index=0
+                )
+
+                if selected_option == "Sequência Completa":
+                    seq_to_translate = rna_seq
+                else:
+                    orf_index = orf_options.index(selected_option) - 1
+                    seq_to_translate = orfs[orf_index]
+
             else:
-                orf_index = orf_options.index(selected_option) - 1
-                seq_to_translate = orfs[orf_index]
+                st.warning("Nenhuma ORF encontrada. Apenas a tradução da sequência completa está disponível.")
+                seq_to_translate = rna_seq
 
-        else:
-            st.warning("Nenhuma ORF encontrada. Apenas a tradução da sequência completa está disponível.")
-            seq_to_translate = rna_seq
+            protein_list = translation(seq_to_translate)
+            if protein_list:
+                display_amino_acids(protein_list)
+                
+        elif option == "Localizador de ORF":
+            orfs = orf_finder(st.session_state.seq)
+            display_orfs(orfs)
 
-        protein_list = translation(seq_to_translate)
-        if protein_list:
-            display_amino_acids(protein_list)
+        elif option == "Identificador de Gene":
+            blast_record = gene_identifier(st.session_state.seq)
+            if blast_record:
+                st.subheader("Possíveis Genes Encontrados (Top 3)")
+                for alignment in blast_record.alignments[:3]:
+                    for hsp in alignment.hsps:
+                        st.markdown("---")
+                        st.success(f"**Gene Encontrado:** {alignment.title}")
+                        st.info(f"**Identidade:** {hsp.identities}")
+                        st.code(f"Sequência Correspondente: {hsp.sbjct}")
+
+elif module_choice == "Módulo Educativo":
+    st.subheader("Módulo Educativo")
+    
+    edu_option = st.sidebar.radio(
+        "Escolha uma opção:",
+        ("Herança Mendeliana", "Exercício - DNA Complementar", "Exercício - Transcrição")
+    )
+    
+    if "exercise_state" not in st.session_state:
+        st.session_state.exercise_state = "initial"
+    if "punnett_genotype1" not in st.session_state:
+        st.session_state.punnett_genotype1 = ""
+    if "punnett_genotype2" not in st.session_state:
+        st.session_state.punnett_genotype2 = ""
+    if "show_punnett_results" not in st.session_state:
+        st.session_state.show_punnett_results = False
+
+    if edu_option == "Herança Mendeliana":
+        st.subheader("Herança Mendeliana")
+        st.markdown("---")
+        st.write("Por favor, digite os genótipos de dois progenitores para gerar um Quadro de Punnett.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            genotype1_input = st.text_input("Genótipo Progenitor 1:", value=st.session_state.punnett_genotype1, placeholder="Ex: Aa", key="g1_input")
+        with col2:
+            genotype2_input = st.text_input("Genótipo Progenitor 2:", value=st.session_state.punnett_genotype2, placeholder="Ex: aa", key="g2_input")
+
+        if st.button("Gerar Quadro de Punnett"):
+            try:
+                validate_genotype(genotype1_input)
+                validate_genotype(genotype2_input)
+                st.session_state.punnett_genotype1 = genotype1_input
+                st.session_state.punnett_genotype2 = genotype2_input
+                st.session_state.show_punnett_results = True
+            except ValueError as e:
+                st.error(f"Erro: {e}")
+                st.session_state.show_punnett_results = False
+                
+        if st.session_state.show_punnett_results:
+            punnet_square_display(st.session_state.punnett_genotype1, st.session_state.punnett_genotype2)
+
+    elif edu_option.startswith("Exercício"):
+        st.subheader(edu_option)
+        st.markdown("---")
+        
+        exercise_type_map = {
+            "Exercício - DNA Complementar": "DNA complementar",
+            "Exercício - Transcrição": "RNA"
+        }
+        exercise_type = exercise_type_map[edu_option]
+        
+        st.write(f"Instruções: Digite a sequência de **{exercise_type}** para cada uma das sequências exibidas.")
+        
+        if st.button("Iniciar Novo Exercício") or st.session_state.exercise_state == "initial":
+            st.session_state.exercise_state = "running"
+            st.session_state.show_exercise_results = False
+            st.session_state.exercises = []
             
-    elif option == "ORF Finder":
-        orfs = orf_finder(st.session_state.seq)
-        if orfs:
-            st.write("### Open Reading Frames (ORFs) Encontradas")
-            for idx, orf in enumerate(orfs, 1):
-                st.code(f"ORF - {idx:02}: {orf}")
-        else:
-            st.warning("Nenhuma ORF encontrada.")
+            for _ in range(3):
+                exercise_sequence = generate_sequence()
+                
+                if exercise_type == "DNA complementar":
+                    expected_sequence = complementary_dna(exercise_sequence)
+                    valid_bases = "CGTA"
+                elif exercise_type == "RNA":
+                    expected_sequence = transcription(exercise_sequence)
+                    valid_bases = "CGUA"
 
-    elif option == "Identificador de Gene":
-        blast_record = gene_identifier(st.session_state.seq)
-        if blast_record:
-            st.write("### Possíveis Genes Encontrados (Top 3)")
-            for alignment in blast_record.alignments[:3]:
-                for hsp in alignment.hsps:
-                    st.write("---")
-                    st.success(f"**Gene Encontrado:** {alignment.title}")
-                    st.info(f"**Identidade:** {hsp.identities}")
-                    st.code(f"Sequência Correspondente: {hsp.sbjct}")
+                
+                st.session_state.exercises.append({
+                    "original_sequence": exercise_sequence,
+                    "expected_sequence": expected_sequence,
+                    "valid_bases": valid_bases,
+                })
+            
+            st.session_state.user_inputs = [""] * 3
+        
+        if st.session_state.exercise_state == "running":
+            st.markdown("---")
+            user_inputs = []
+            for n in range(3):
+                current_ex = st.session_state.exercises[n]
+                st.subheader(f"Sequência {n + 1}")
+                st.code(f"5' - {current_ex['original_sequence']} - 3'")
+                
+                user_input = st.text_input(
+                    f"Sua resposta para {exercise_type} (use apenas {current_ex['valid_bases']}):",
+                    value=st.session_state.user_inputs[n],
+                    key=f"user_input_{n}",
+                    placeholder=f"Digite a sequência de {exercise_type}"
+                )
+                st.session_state.user_inputs[n] = user_input
+                
+            if st.button("Verificar Respostas"):
+                score = 0
+                st.session_state.results = []
+                for n in range(3):
+                    current_ex = st.session_state.exercises[n]
+                    student_sequence = st.session_state.user_inputs[n].strip().upper().replace(" ", "")
+                    is_correct = False
+                    
 
+                    if all(base in current_ex["valid_bases"] for base in student_sequence) and len(student_sequence) == len(current_ex["expected_sequence"]):
+                        if student_sequence == current_ex["expected_sequence"]:
+                            is_correct = True
+                    
+                    st.session_state.results.append({
+                        "original_sequence": current_ex["original_sequence"],
+                        "expected_sequence": current_ex["expected_sequence"],
+                        "user_answer": student_sequence,
+                        "correct": is_correct
+                    })
+                    if is_correct:
+                        score += 1
+                
+                st.session_state.final_score = score
+                st.session_state.exercise_state = "finished"
+                st.rerun()
+
+        if st.session_state.exercise_state == "finished":
+            st.subheader("Resultados Finais")
+            total_score = st.session_state.final_score
+            st.markdown(f"### Pontuação total: **{total_score}** de **3**")
+            st.markdown("---")
+            for i, result in enumerate(st.session_state.results, 1):
+                st.write(f"**Exercício {i}**")
+                
+                st.markdown(f"**Resposta Correta:** `{result['expected_sequence']}`")
+                
+                colored_feedback = get_colored_feedback(result['expected_sequence'], result['user_answer'])
+                st.markdown(f"**Sua Resposta:** {colored_feedback}", unsafe_allow_html=True)
+                
+                if result['correct']:
+                    st.success("Correto")
+                else:
+                    st.error(f"Incorreto.")
+                st.markdown("---")
