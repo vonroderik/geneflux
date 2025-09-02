@@ -67,7 +67,8 @@ def validate_genotype(genotype: str):
         "Oa",
         "Bo",
         "BO",
-        "OBoB",
+        "OB",
+        "oB",
         "bO",
         "Ob",
     }
