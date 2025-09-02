@@ -509,5 +509,5 @@ elif module_choice == "Módulo Educativo":
                 if result['correct']:
                     st.success("Correto")
                 else:
-                    st.error(f"Incorreto.")
+                    st.error("Incorreto.")
                 st.markdown("---")
