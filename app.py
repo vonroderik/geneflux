@@ -497,7 +497,8 @@ elif module_choice == "Módulo Educativo":
         st.subheader("Herança Mendeliana")
         st.markdown("---")
         st.write(
-            "Por favor, digite os genótipos de dois progenitores para gerar um Quadro de Punnett."
+            """Por favor, digite os genótipos de dois progenitores para gerar um Quadro de Punnett. 
+            No caso de sistema ABO, utilize letras maiusculas"""
         )
 
         col1, col2 = st.columns(2)
