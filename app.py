@@ -43,47 +43,18 @@ def validate_sequence(seq: str) -> Tuple[str, Literal["dna", "rna"]]:
 
 
 def validate_genotype(genotype: str):
-    """Verifica se o genótipo entrado pelo usuário é válido, incluindo os alelos A, B e O."""
-    # Garante que o genótipo tenha 2 caracteres
+    """
+    Verifica se o genótipo inserido pelo usuário é válido.
+    Simplesmente verifica se a string tem 2 caracteres e se eles
+    são alelos genéticos reconhecíveis.
+    """
     if len(genotype) != 2:
-        raise ValueError(
-            "Genótipo inválido. O genótipo deve ter 2 caracteres, por exemplo: 'AA', 'Aa', 'oo', 'AB'."
-        )
-
-    valid_genotypes = {
-        "AA",
-        "Aa",
-        "aA",
-        "aa",
-        "BB",
-        "Bb",
-        "bB",
-        "bb",
-        "OO",
-        "Oo",
-        "oO",
-        "oo",
-        "AB",
-        "BA",
-        "Ao",
-        "oA",
-        "oa",
-        "ao",
-        "ab",
-        "ba",
-        "aO",
-        "Oa",
-        "Bo",
-        "oB",
-        "bO",
-        "Ob",
-        "bo",
-        "ob",
-    }
-    if genotype not in valid_genotypes:
-        raise ValueError(
-            f"O genótipo '{genotype}' não é um genótipo válido para este sistema. Tente um dos seguintes: {', '.join(sorted(list(valid_genotypes)))}."
-        )
+        raise ValueError("Genótipo inválido. O genótipo deve ter 2 caracteres, por exemplo: 'AA', 'Aa', 'oo', 'AB'.")
+    
+    valid_alleles = {"A", "a", "B", "b", "O", "o"}
+    for allele in genotype:
+        if allele not in valid_alleles:
+            raise ValueError(f"O alelo '{allele}' no genótipo '{genotype}' não é válido.")
 
 
 def reverse_transcription(seq: str) -> str:
@@ -202,16 +173,27 @@ def punnet_square_display(genotype1: str, genotype2: str):
     gamete2 = list(genotype2)
     offspring = [a + b for a, b in product(gamete1, gamete2)]
 
-    # Normaliza genótipos ABO (ex: 'Ao' e 'oA' se tornam 'Ao')
-    for i, gen in enumerate(offspring):
-        if "A" in gen or "a" in gen:
-            offspring[i] = "".join(sorted(gen.replace("O", "o")))
-        elif "B" in gen or "b" in gen:
-            offspring[i] = "".join(sorted(gen.replace("O", "o")))
-        else:
-            offspring[i] = "".join(sorted(gen))
+    # Determina o tipo de herança com base em todos os 4 alelos
+    is_mendelian_cross = not any(allele.lower() in {'b', 'o'} for allele in genotype1 + genotype2)
 
-    count = Counter(offspring)
+    # Normaliza os genótipos para contagem e exibição
+    normalized_offspring = []
+    for gen in offspring:
+        if is_mendelian_cross:
+            normalized_offspring.append("".join(sorted(gen)))
+        else:
+            # Normalização para sistema ABO (converte para maiúsculas e ordena, depois corrige caso para exibição)
+            normalized_gen_upper = "".join(sorted(gen.upper()))
+            if normalized_gen_upper == "AO":
+                normalized_offspring.append("Ao")
+            elif normalized_gen_upper == "BO":
+                normalized_offspring.append("Bo")
+            elif normalized_gen_upper == "OO":
+                normalized_offspring.append("oo")
+            else:
+                normalized_offspring.append(normalized_gen_upper)
+
+    count = Counter(normalized_offspring)
 
     st.subheader("Quadro de Punnett")
     st.markdown("---")
@@ -232,19 +214,17 @@ def punnet_square_display(genotype1: str, genotype2: str):
     for g1 in gamete1:
         table_html += "<tr>"
         table_html += (
-            f"<td style='border: 1px solid black; padding: 8px;'><b>{g1}</b></td>"
+            f"<td style='border: 1px black solid; padding: 8px;'><b>{g1}</b></td>"
         )
         for _ in gamete2:
-            child = offspring[offspring_index]
-
+            child = normalized_offspring[offspring_index]
+            
             # Lógica para colorir os genótipos de acordo com o fenótipo
-            if "a" in child and "a" in child.lower():
-                color = "red"
-            elif "o" in child and "o" in child.lower():
+            if "aa" in child.lower() or "oo" in child.lower():
                 color = "red"
             else:
                 color = "green"
-
+            
             table_html += f"<td style='border: 1px solid black; padding: 8px;'><span style='color:{color}; font-weight:bold;'>{child}</span></td>"
             offspring_index += 1
         table_html += "</tr>"
@@ -258,24 +238,37 @@ def punnet_square_display(genotype1: str, genotype2: str):
         perc = 100 * freq / 4
         st.write(f"- **{genotype}**: {freq}/{4} ({perc:.1f}%)")
 
-    # Calcula a frequência fenotípica para o sistema ABO
-    st.markdown("### Frequência Fenotípica (Sistema ABO)")
-    phenotype_counts = Counter()
-    for genotype, freq in count.items():
-        if "a" in genotype.lower() and "b" in genotype.lower():
-            phenotype_counts["AB"] += freq
-        elif "a" in genotype.lower() and "b" not in genotype.lower():
-            phenotype_counts["A"] += freq
-        elif "b" in genotype.lower() and "a" not in genotype.lower():
-            phenotype_counts["B"] += freq
-        elif "o" in genotype.lower():
-            phenotype_counts["O"] += freq
+    # Calcula e exibe a frequência fenotípica correta
+    if is_mendelian_cross:
+        st.markdown("### Frequência Fenotípica (Autossômica)")
+        dominant_count = sum(freq for gen, freq in count.items() if "A" in gen)
+        recessive_count = count.get("aa", 0)
+        total = dominant_count + recessive_count
+        
+        if total > 0:
+            perc_dom = 100 * dominant_count / total
+            perc_rec = 100 * recessive_count / total
+            st.write(f"- **Dominante**: {dominant_count}/{total} ({perc_dom:.1f}%)")
+            st.write(f"- **Recessivo**: {recessive_count}/{total} ({perc_rec:.1f}%)")
 
-    total = sum(phenotype_counts.values())
-    for phenotype, freq in phenotype_counts.items():
-        perc = 100 * freq / total if total > 0 else 0
-        st.write(f"- **Tipo {phenotype}**: {freq}/{total} ({perc:.1f}%)")
-
+    else:
+        st.markdown("### Frequência Fenotípica (Sistema ABO)")
+        phenotype_counts = Counter()
+        for genotype, freq in count.items():
+            if "AB" in genotype.upper():
+                phenotype_counts["AB"] += freq
+            elif "A" in genotype.upper():
+                phenotype_counts["A"] += freq
+            elif "B" in genotype.upper():
+                phenotype_counts["B"] += freq
+            elif "OO" in genotype.upper():
+                phenotype_counts["O"] += freq
+        
+        total = sum(phenotype_counts.values())
+        if total > 0:
+            for phenotype, freq in phenotype_counts.items():
+                perc = 100 * freq / total
+                st.write(f"- **Tipo {phenotype}**: {freq}/{total} ({perc:.1f}%)")
 
 def get_colored_feedback(correct_seq: str, user_seq: str) -> str:
     """
